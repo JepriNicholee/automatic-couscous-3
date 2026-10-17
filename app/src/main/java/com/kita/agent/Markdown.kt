@@ -22,7 +22,8 @@ import android.widget.TextView
 // Render markdown dan blok kode di gelembung chat.
 // Fungsi-fungsi di sini adalah ekstensi MainActivity (dipecah dari MainActivity.kt).
 
-internal fun MainActivity.fillMarkdown(box: LinearLayout, text: String, withCopy: Boolean = true, streaming: Boolean = false) {
+internal fun MainActivity.fillMarkdown(box: LinearLayout, textRaw: String, withCopy: Boolean = true, streaming: Boolean = false) {
+    val text = stripModelTags(textRaw)
     box.removeAllViews()
     (box.tag as? MsgMeta)?.text = text
     var last = 0

@@ -120,6 +120,7 @@ internal fun MainActivity.startWorker(
         zone.renderSteps(agentSteps.groups.value)
     }
     updateAction()
+    askSkipped = false
     setStatus(KIND_DOTS, "Sedang berpikir")
     val t = Thread {
         try {

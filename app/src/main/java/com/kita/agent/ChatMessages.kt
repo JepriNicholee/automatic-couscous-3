@@ -100,32 +100,57 @@ internal fun MainActivity.newAiBox(): LinearLayout {
 }
 
 /** Dipanggil saat teks balasan mengalir masuk; menggambar ulang pesan yang sedang ditulis. */
-internal fun MainActivity.streamUpdate(text: String) = runOnUiThread {
+internal fun MainActivity.streamUpdate(textRaw: String) = runOnUiThread {
+    val text = stripModelTags(textRaw)
+    if (text.isBlank()) return@runOnUiThread // baru blok berpikir: belum ada yang layak tampil
     emptyState.visibility = View.GONE
-    val box = streamBox ?: newAiBox().also { streamBox = it }
+    // Balasan sebelumnya yang masih mengejar ketikan diselesaikan dulu; balasan baru selalu di gelembung baru.
+    val old = streamBox
+    if (old != null && streamEnded && !streamCopyAdded) finishStream(old)
+    val box = streamBox ?: newAiBox().also { streamBox = it; typewriterShown = "" }
     streamText = text
     streamEnded = false
     streamCopyAdded = false
     typewriterTarget = text
-    if (!typewriterTarget.startsWith(typewriterShown)) typewriterShown = ""
-    typewriterHandler.removeCallbacksAndMessages(null)
+    if (!text.startsWith(typewriterShown)) { // percobaan ulang: teks dimulai lagi dari awal
+        typewriterShown = ""
+        box.removeAllViews()
+    }
+    startTypewriter(box)
+}
+
+/** Efek ketik: mengejar teks target, makin tertinggal makin cepat, dan menutup gelembung begitu stream selesai. */
+private fun MainActivity.startTypewriter(box: LinearLayout) {
+    typewriterTick?.let { typewriterHandler.removeCallbacks(it) }
     val tick = object : Runnable {
         override fun run() {
             val target = typewriterTarget
-            if (typewriterShown.length < target.length) {
-                val step = if (target.length - typewriterShown.length > 240) 2 else 1
-                typewriterShown = target.take((typewriterShown.length + step).coerceAtMost(target.length))
+            val lag = target.length - typewriterShown.length
+            if (lag > 0) {
+                typewriterShown = target.take(typewriterShown.length + maxOf(1, lag / 25))
                 updateStreamingText(box, typewriterShown)
                 if (typewriterShown.length % 3 == 0 || typewriterShown.length == target.length) scrollDown()
                 typewriterHandler.postDelayed(this, 26L)
             } else if (streamEnded && !streamCopyAdded) {
-                streamCopyAdded = true
-                fillMarkdown(box, typewriterShown, withCopy = false, streaming = false)
-                addCopyRow(box)
+                finishStream(box)
             }
         }
     }
+    typewriterTick = tick
     typewriterHandler.post(tick)
+}
+
+/** Ganti teks ketik dengan tampilan akhir (markdown, blok kode, jam) dan lepaskan kotak stream. */
+private fun MainActivity.finishStream(box: LinearLayout) {
+    typewriterTick?.let { typewriterHandler.removeCallbacks(it) }
+    typewriterTick = null
+    streamCopyAdded = true
+    fillMarkdown(box, typewriterTarget, withCopy = false, streaming = false)
+    addCopyRow(box)
+    streamBox = null
+    streamText = ""
+    typewriterShown = ""
+    typewriterTarget = ""
 }
 
 internal fun MainActivity.streamEnd() = runOnUiThread {
@@ -135,21 +160,11 @@ internal fun MainActivity.streamEnd() = runOnUiThread {
         if (b != null && b.childCount == 0) (b.parent as? android.view.ViewGroup)?.removeView(b)
         streamBox = null
         streamText = ""
+        typewriterShown = ""
+        typewriterTarget = ""
         return@runOnUiThread
     }
-    typewriterHandler.post(object : Runnable {
-        override fun run() {
-            if (typewriterShown.length < typewriterTarget.length) {
-                typewriterHandler.postDelayed(this, 26L)
-            } else if (!streamCopyAdded) {
-                streamCopyAdded = true
-                fillMarkdown(b, typewriterShown, withCopy = false, streaming = false)
-                addCopyRow(b)
-                streamBox = null
-                streamText = ""
-            }
-        }
-    })
+    startTypewriter(b) // kejar sisa ketikan lalu finalisasi
 }
 
 internal fun MainActivity.addNote(t: String) = runOnUiThread {

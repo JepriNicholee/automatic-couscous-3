@@ -283,6 +283,8 @@ class MainActivity : Activity() {
     internal val typewriterHandler = android.os.Handler(android.os.Looper.getMainLooper())
     internal var typewriterTarget = ""
     internal var typewriterShown = ""
+    internal var typewriterTick: Runnable? = null
+    @Volatile internal var askSkipped = false
     internal var streamEnded = false
     internal var streamCopyAdded = false
 

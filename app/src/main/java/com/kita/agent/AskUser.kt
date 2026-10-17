@@ -19,6 +19,7 @@ internal fun releaseWaits() {
 /** Tampilkan pertanyaan. Jika [options] kosong, pengguna mengetik jawaban bebas. Thread agen menunggu jawaban. */
 internal fun MainActivity.askUser(question: String, options: List<String>): String {
     if (isAutonomous()) return "(mode otonom aktif: putuskan sendiri pendekatan terbaik yang paling mungkin mencapai tujuan)"
+    if (askSkipped) return "(pengguna sudah melewati pertanyaan sebelumnya; jangan bertanya lagi, putuskan sendiri dengan asumsi wajar dan kerjakan)"
     val latch = CountDownLatch(1)
     val answer = AtomicReference<String?>(null)
     pendingWaits.add(latch)
@@ -43,5 +44,8 @@ internal fun MainActivity.askUser(question: String, options: List<String>): Stri
         pendingWaits.remove(latch)
     }
     return answer.get()?.takeIf { it.isNotEmpty() }
-        ?: "(pengguna tidak menjawab; lanjutkan dengan pendekatan terbaik yang aman)"
+        ?: run {
+            askSkipped = true
+            "(pengguna tidak menjawab; lanjutkan dengan pendekatan terbaik yang aman)"
+        }
 }

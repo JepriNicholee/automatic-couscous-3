@@ -109,3 +109,26 @@ Alur: pengguna melampirkan file, AI membacanya langsung (tanpa izin), memahami p
 - Mode hanya baca dan mode sandbox tetap menang atas mode ini. Prompt sistem ikut memberi tahu AI urutan kerjanya.
 - Membaca lampiran tidak butuh perubahan: perintah baca sudah otomatis lewat "Setujui otomatis perintah baca".
 - Belum dikompilasi di lingkungan penyusunan: jalankan WITH_TESTS=1 bash build-termux.sh.
+
+## Perbaikan streaming balasan (v2.7a)
+Dari rekaman layar: gelembung balasan macet sempit dan terpotong ("<th inki ng> ..."), tag `<thinking>`/`<response>` tampil mentah,
+dan AI bertanya lewat dialog berulang-ulang walau sudah dilewati.
+
+- ChatMessages.kt: efek ketik ditulis ulang. Tiap tik hanya membatalkan tik-nya sendiri (bukan semua callback, yang dulu ikut membunuh
+  penutup gelembung), makin tertinggal makin cepat, dan gelembung SELALU difinalisasi saat stream selesai. Balasan baru tidak lagi
+  menimpa gelembung yang sedang ditutup, dan percobaan ulang koneksi menggambar ulang gelembung dari awal.
+- TextClean.kt (baru): `stripModelTags` membuang blok `<thinking>`, membuka bungkus `<response>`, dan memotong awalan tag yang baru setengah datang;
+  isi blok kode tidak disentuh. Dipakai saat streaming dan saat menggambar pesan (riwayat lama ikut bersih). Tes: TextCleanTest.
+- AskUser.kt: setelah pengguna menekan "Lewati", pertanyaan berikutnya pada tugas yang sama tidak lagi memunculkan dialog;
+  AI diberi tahu untuk memutuskan sendiri dengan asumsi wajar.
+
+## Baris status tanpa pengurung (v2.7b)
+Mengikuti video acuan: baris status AI ("Membaca ApiErrors.kt >") kini polos, tanpa kartu, latar, atau garis.
+
+- LiveStatusLine.kt: latar kartu bulat dihapus (`background = null`); ikon + teks + panah langsung di atas latar chat biru.
+- Warna menyesuaikan latar biru: teks putih redup dengan pita putih terang yang menyapu (shimmer), panah putih lembut, titik tetap oranye.
+- Ikon kerja selalu tiga titik oranye yang mengorbit pada elips mendatar (depan lebih besar, belakang lebih kecil), seperti acuan.
+  Ikon hasil (centang, silang, stop, jam) tetap dipakai hanya di akhir tugas.
+- Teks berganti dengan pudar-silang di tempat yang sama (teks lama memudar sambil teks baru muncul), tanpa bergeser.
+- Panah menempel di ujung teks; teks panjang dipotong dengan "…" dan panah tetap terlihat.
+- Font tipis (sans-serif-light) 16sp. Daftar "Langkah yang dikerjakan" (gelembung putih di bawahnya) tidak diubah.

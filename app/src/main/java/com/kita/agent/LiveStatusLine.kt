@@ -41,11 +41,13 @@ import kotlin.math.sin
 internal object Live {
     // Baris status
     val ORANGE = 0xFFD97757.toInt()      // aksen hangat (titik "berpikir" dan ikon kerja)
-    val STRIP = 0xFFF9F9F6.toInt()       // latar baris status (putih gading, seperti acuan video)
-    val TEXT_BASE = 0xFFBDBDB9.toInt()   // teks abu terang saat berkilau
-    val TEXT_SHINE = 0xFF3F3E3B.toInt()  // pita gelap yang menyapu ke kanan
-    val TEXT_HI = 0xFF2B2A27.toInt()     // teks akhir (diam)
-    val CHEVRON = 0xFF8D8C86.toInt()
+    val TEXT_SHINE = 0xFF3F3E3B.toInt()  // pita gelap yang menyapu ke kanan (judul header status)
+
+    // Baris status di feed: tanpa kartu/pengurung, langsung di atas latar biru chat.
+    val LINE_BASE = 0xB3FFFFFF.toInt()   // putih redup saat berkilau
+    val LINE_SHINE = 0xFFFFFFFF.toInt()  // pita putih terang yang menyapu ke kanan
+    val LINE_TEXT = 0xFFFFFFFF.toInt()   // teks akhir (diam)
+    val LINE_CHEVRON = 0xCCFFFFFF.toInt()
 
     // Terminal
     val BG = 0xFF0F172A.toInt()
@@ -90,7 +92,11 @@ private const val SPAN_FLAGS = Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
 
 // ------------------------------------------------------------------ Ikon "berpikir": tiga titik mengorbit
 
-/** Tiga titik hangat yang berputar sambil "bernapas" (mengembang-mengerut). Berhenti sendiri saat lepas dari layar. */
+/**
+ * Tiga titik hangat yang mengorbit pada elips mendatar: yang di depan lebih besar, yang di belakang lebih kecil, kecepatannya
+ * sedikit tidak rata sehingga kadang bertumpuk dan kadang merenggang (seperti ikon berpikir pada video acuan).
+ * Berhenti sendiri saat lepas dari layar.
+ */
 internal class OrbitDotsView(ctx: Context, private val dotColor: Int = Live.ORANGE) : View(ctx) {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private var phase = 0f
@@ -99,7 +105,7 @@ internal class OrbitDotsView(ctx: Context, private val dotColor: Int = Live.ORAN
     private fun start() {
         if (anim != null) return
         anim = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 2600
+            duration = 1500
             repeatCount = ValueAnimator.INFINITE
             interpolator = LinearInterpolator()
             addUpdateListener {
@@ -126,14 +132,15 @@ internal class OrbitDotsView(ctx: Context, private val dotColor: Int = Live.ORAN
         p.color = dotColor
         val cx = width / 2f
         val cy = height / 2f
-        val s = minOf(width, height).toFloat()
+        val rx = width * 0.34f
+        val ry = height * 0.20f
         val twoPi = (2.0 * Math.PI).toFloat()
-        val breathe = 0.5f - 0.5f * cos(phase * twoPi * 2f) // 0..1, dua kali per putaran
-        val orbit = s * (0.09f + 0.21f * breathe)
         for (i in 0..2) {
-            val a = phase * twoPi + i * twoPi / 3f
-            val r = s * (0.065f + 0.05f * (0.5f + 0.5f * sin(phase * twoPi * 3f + i * 2.1f)))
-            c.drawCircle(cx + orbit * cos(a), cy + orbit * sin(a), r, p)
+            // Gelombang kedua membuat gerak tidak seragam, tetap berulang mulus tiap putaran.
+            val a = phase * twoPi + i * twoPi / 3f + 0.7f * sin(phase * twoPi * 2f + i * 2.1f)
+            val depth = 0.5f + 0.5f * sin(a) // 0 = di belakang, 1 = di depan
+            val r = height * (0.085f + 0.075f * depth)
+            c.drawCircle(cx + rx * cos(a), cy + ry * sin(a), r, p)
         }
     }
 }
@@ -619,7 +626,6 @@ internal class LiveStatusLine(private val act: MainActivity) : LinearLayout(act)
 
     private val ui = Handler(Looper.getMainLooper())
     private var gate = TextGate(700L)
-    private val kindByText = HashMap<String, Int>()
     private var iconKind = Int.MIN_VALUE
     private var iconTint = 0
     private var finished = false
@@ -630,29 +636,52 @@ internal class LiveStatusLine(private val act: MainActivity) : LinearLayout(act)
 
     private val iconSlot = FrameLayout(act)
     private val label = ShimmerText(act).apply {
-        textSize = 15.5f
-        typeface = Typeface.create("sans-serif", Typeface.NORMAL)
-        shimmerBase = Live.TEXT_BASE
-        shimmerHi = Live.TEXT_SHINE
+        textSize = 16f
+        typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
+        shimmerBase = Live.LINE_BASE
+        shimmerHi = Live.LINE_SHINE
         shimmerMs = 2000L
-        setTextColor(Live.TEXT_HI)
+        setTextColor(Live.LINE_TEXT)
         setSingleLine(true)
         ellipsize = TextUtils.TruncateAt.END
         alpha = 0f
         setShimmer(false)
     }
-    private val chevron = IconView(act, IconView.CHEVRON, Live.CHEVRON)
 
+    // Teks lama yang memudar di tempat yang sama saat teks berganti (pudar-silang, tanpa bergeser).
+    private val oldLabel = TextView(act).apply {
+        textSize = 16f
+        typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
+        setTextColor(Live.LINE_BASE)
+        setSingleLine(true)
+        ellipsize = TextUtils.TruncateAt.END
+        alpha = 0f
+    }
+    private val textBox = FrameLayout(act).apply {
+        addView(oldLabel, FrameLayout.LayoutParams(WRAP, WRAP))
+        addView(label, FrameLayout.LayoutParams(WRAP, WRAP))
+    }
+    private val chevron = IconView(act, IconView.CHEVRON, Live.LINE_CHEVRON)
+
+    // Tanpa kartu, tanpa latar, tanpa garis: hanya ikon + teks + panah di atas latar chat. Panah menempel di ujung teks.
     private val head = LinearLayout(act).apply {
         orientation = HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        minimumHeight = act.dp(46)
-        setPadding(act.dp(10), act.dp(6), act.dp(12), act.dp(6))
-        background = pressable(act.rounded(Live.STRIP, 16))
-        addView(iconSlot, LinearLayout.LayoutParams(act.dp(28), act.dp(30)))
-        addView(label, LinearLayout.LayoutParams(0, WRAP, 1f).apply { marginStart = act.dp(6) })
-        addView(chevron, LinearLayout.LayoutParams(act.dp(20), act.dp(20)).apply { marginStart = act.dp(6) })
+        minimumHeight = act.dp(40)
+        setPadding(act.dp(14), act.dp(4), act.dp(12), act.dp(4))
+        background = null
+        addView(iconSlot, LinearLayout.LayoutParams(act.dp(34), act.dp(30)))
+        addView(textBox, LinearLayout.LayoutParams(WRAP, WRAP).apply { marginStart = act.dp(6) })
+        addView(chevron, LinearLayout.LayoutParams(act.dp(20), act.dp(20)).apply { marginStart = act.dp(4) })
         setOnClickListener { toggle() }
+        addOnLayoutChangeListener { _, l, _, r, _, _, _, _, _ ->
+            // Sisakan ruang untuk ikon dan panah; teks yang kepanjangan dipotong dengan "…".
+            val avail = (r - l) - paddingLeft - paddingRight - act.dp(34) - act.dp(6) - act.dp(20) - act.dp(4)
+            if (avail > 0 && label.maxWidth != avail) post {
+                label.maxWidth = avail
+                oldLabel.maxWidth = avail
+            }
+        }
     }
 
     private val release = Runnable {
@@ -673,7 +702,6 @@ internal class LiveStatusLine(private val act: MainActivity) : LinearLayout(act)
         if (finished) return
         val t = tidyLine(raw, 90)
         if (t.isEmpty()) return
-        kindByText[t] = kind
         gate.submit(t, SystemClock.uptimeMillis())?.let { applyLine(it) }
         scheduleRelease()
     }
@@ -683,30 +711,27 @@ internal class LiveStatusLine(private val act: MainActivity) : LinearLayout(act)
         gate.nextDelay(SystemClock.uptimeMillis())?.let { ui.postDelayed(release, it) }
     }
 
+    /** Saat bekerja ikonnya selalu titik berpikir (seperti acuan); ikon hasil (centang, silang, dst.) hanya untuk akhir tugas. */
     private fun applyLine(t: String) {
-        val kind = kindByText[t] ?: KIND_DOTS
-        swapText(t, kind, Live.ORANGE, working = true)
+        swapText(t, KIND_DOTS, Live.ORANGE, working = true)
     }
 
-    /** Ganti teks + ikon dengan pudar-geser: teks lama naik dan memudar, teks baru naik dari bawah. */
+    /** Ganti teks dengan pudar-silang di tempat yang sama: teks lama memudar sambil teks baru muncul, tanpa bergeser. */
     private fun swapText(t: String, kind: Int, tint: Int, working: Boolean) {
         label.animate().cancel()
-        val show = {
-            label.text = t
-            label.setShimmer(working)
-            if (!working) label.setTextColor(Live.TEXT_HI)
-            setIcon(kind, tint, working)
-            label.translationY = act.dp(5).toFloat()
-            label.animate().alpha(1f).translationY(0f).setDuration(240)
-                .setInterpolator(DecelerateInterpolator()).start()
+        oldLabel.animate().cancel()
+        val had = label.alpha > 0.05f && label.text.isNotEmpty()
+        if (had) {
+            oldLabel.text = label.text
+            oldLabel.alpha = label.alpha
+            oldLabel.animate().alpha(0f).setDuration(260).start()
         }
-        if (label.alpha < 0.05f || label.text.isEmpty()) {
-            label.alpha = 0f
-            show()
-        } else {
-            label.animate().alpha(0f).translationY(-act.dp(4).toFloat()).setDuration(130)
-                .withEndAction { show() }.start()
-        }
+        label.text = t
+        label.setShimmer(working)
+        if (!working) label.setTextColor(Live.LINE_TEXT)
+        setIcon(kind, tint, working)
+        label.alpha = 0f
+        label.animate().alpha(1f).setDuration(260).start()
     }
 
     private fun setIcon(kind: Int, tint: Int, breathe: Boolean) {
@@ -720,8 +745,9 @@ internal class LiveStatusLine(private val act: MainActivity) : LinearLayout(act)
         } else {
             IconView(act, kind, tint).apply { working = kind == IconView.GEAR && breathe }
         }
-        val size = if (kind == KIND_DOTS) act.dp(22) else act.dp(24)
-        iconSlot.addView(v, FrameLayout.LayoutParams(size, size, Gravity.CENTER))
+        val lp = if (kind == KIND_DOTS) FrameLayout.LayoutParams(act.dp(34), act.dp(22), Gravity.CENTER)
+        else FrameLayout.LayoutParams(act.dp(24), act.dp(24), Gravity.CENTER)
+        iconSlot.addView(v, lp)
         v.scaleX = 0.4f
         v.scaleY = 0.4f
         v.alpha = 0f
@@ -758,11 +784,12 @@ internal class LiveStatusLine(private val act: MainActivity) : LinearLayout(act)
     fun begin(firstText: String) {
         ui.removeCallbacks(release)
         gate = TextGate(700L)
-        kindByText.clear()
         finished = false
         iconKind = Int.MIN_VALUE
         label.animate().cancel()
+        oldLabel.animate().cancel()
         label.alpha = 0f
+        oldLabel.alpha = 0f
         label.text = ""
         setExpanded(open = false, animate = false)
         terminal.reset()
@@ -779,12 +806,13 @@ internal class LiveStatusLine(private val act: MainActivity) : LinearLayout(act)
     fun reset() {
         ui.removeCallbacks(release)
         gate = TextGate(700L)
-        kindByText.clear()
         finished = false
         iconKind = Int.MIN_VALUE
         label.animate().cancel()
+        oldLabel.animate().cancel()
         label.setShimmer(false)
         label.alpha = 0f
+        oldLabel.alpha = 0f
         label.text = ""
         stopBreathe()
         iconSlot.removeAllViews()
