@@ -1,0 +1,111 @@
+# Perubahan tampilan v2.2 (modern, sederhana, tajam)
+
+Tujuan: layar lebih bersih, satu cara untuk tiap hal, mudah dioperasikan satu tangan.
+Logika agen, penyedia model, dan keamanan tidak diubah.
+
+## Chat
+- Latar putih bersih (dulu gradasi biru berawan). Teks AI 16,5sp, spasi baris 1,35, warna tinta tunggal.
+- Hapus kilau biru berjalan pada teks yang sedang mengalir, dan hapus kata tebal/kode yang berwarna biru.
+  Tebal = tebal biasa; kode inline = abu lembut.
+- Hapus header "AI Agent - status" di tiap balasan (mengulang baris aktivitas). Status hanya di SATU pil abu di atas jawaban.
+- Pil status tanpa awalan "AI Agent"; hasil akhir ringkas: "Berhasil - n langkah".
+- Gelembung pengguna lebih rapat; chip saran putih bergaris halus (tidak lagi biru).
+
+## Header dan input
+- Header: pil model di kiri, chat baru + pengaturan (ikon roda gigi) di kanan. Ikon menu tiga garis (yang dulu membuka Pengaturan) dan avatar dihapus.
+- Input: satu tombol aksi saja (mikrofon saat kosong, panah kirim saat ada teks, kotak saat berjalan). Tombol mikrofon ganda dihapus.
+- Layar kosong kini punya sapaan dan tiga contoh perintah (mengisi kolom input, tidak langsung menjalankan).
+
+## Pengaturan, model, izin
+- Pengaturan jadi lembar bawah: Penyedia AI, API key, Simpan. Menu pendukung berupa baris tautan. Opsi lanjutan memakai saklar dengan keterangan satu baris.
+- Pemilih model jadi lembar bawah dengan daftar bersih, centang pada model aktif, penanda "sibuk".
+- Dialog izin: penjelasan, label risiko berwarna lembut, perintah di kotak abu. Tombol "Jalankan", "Tolak", "Ya, semua".
+- Dialog sistem: sudut 28dp, tombol tanpa huruf kapital semua.
+
+## File
+- Baru: Ui.kt (pembantu bentuk, tombol, lembar bawah).
+- Diubah: Palette, MainActivity, ChatMessages, Markdown, MessageMenu, ActivityZone, AgentStepList, StatusBar,
+  SettingsDialog, ModelPicker, ApprovalDialog, ChatControls, ModelCall/ToolExecution (hanya teks tombol), styles/colors/dialog_bg.
+- Belum dikompilasi di lingkungan penyusunan: jalankan WITH_TESTS=1 bash build-termux.sh.
+
+## AI bekerja mandiri (v2.3)
+- Prompt sistem ditulis ulang: dari sekitar 30 aturan kaku menjadi satu paragraf pendek. Isinya hanya fakta lingkungan
+  (Termux, folder kerja, alat, folder lampiran) dan kebiasaan yang meningkatkan mutu kerja (pahami tujuan, baca dulu,
+  belajar dari kegagalan, periksa hasil, lapor jujur). Keputusan bertindak atau menjawab ada di AI.
+- Dihapus: pesan dorongan tersembunyi "Kamu belum menjalankan langkah apa pun..." (AgentLoop).
+- Tahap "Memahami permintaan" kini mati secara bawaan (pengaturan "understand" = false); hemat satu panggilan model per pesan.
+- Tetap ada: dialog persetujuan, mode hanya baca/sandbox/otonom, pengingat verifikasi build (maks 2 kali).
+
+## Baris status live + terminal live (v2.5)
+Tujuan: satu baris status yang bersih seperti di aplikasi Claude, dan kode/perintah AI bisa dilihat langsung saat diketuk.
+
+- Pil abu + daftar langkah lama diganti `LiveStatusLine` (LiveStatusLine.kt): ikon, teks berkilau, panah.
+  - Ikon berganti sesuai kerja AI: titik oranye mengorbit saat berpikir; saat menjalankan langkah ikon mengikuti jenisnya
+    (baca, cari, tulis, build = roda gigi berputar, arsip, unduh, uji, ...). Ikon baru muncul dengan efek membal.
+  - Teks berkilau abu-ke-gelap, naik-memudar saat berganti, dipotong "..." sebelum panah. Tahan 0,7 detik agar tidak berkedip (TextGate).
+  - Teks langkah kini memakai kalimat `deskripsi` yang ditulis AI sendiri (mis. "Memeriksa isi arsip ZIP"), bukan judul generik.
+  - Saat selesai: ikon centang hijau / silang merah / dll, teks diam ("Berhasil - 3 langkah"). Panah tetap bisa dibuka untuk meninjau.
+- Ketuk baris -> terminal gelap terbuka dengan animasi tinggi + pudar (`LiveTerminal`):
+  - Perintah diberi prompt `$` dan diwarnai (perintah cyan, opsi oranye, string hijau, operator ungu, variabel kuning).
+  - Keluaran mengalir baris demi baris (efek ketik) dan diwarnai: `> Task` redup, `BUILD SUCCESSFUL` hijau, error merah, warning kuning,
+    angka oranye, path ungu. Kursor hijau berkedip selama perintah jalan.
+  - Tulis file: path + isi bernomor dengan warna kode; setelah selesai tampil diff (+ hijau, - merah).
+  - Deretan chip langkah (geser samping): ketuk untuk melihat langkah lain; ketuk chip terakhir untuk kembali mengikuti live.
+  - Tombol Salin (salin isi terminal), Besar/Kecil (tinggi 250 / 460 dp), penghitung waktu berjalan, tombol Setuju/Tolak saat menunggu izin.
+  - Tekan lama judul terminal -> panel komputer lengkap (seperti sebelumnya).
+  - Gulir otomatis mengikuti keluaran terbaru; bila pengguna menggulir ke atas, tidak ditarik turun.
+- Pembacaan keluaran live (`LiveTail`) dipercepat dari 2,5 dtk ke 1,5 dtk (build tetap 5 dtk).
+- Baru: LiveStatusLine.kt (tampilan), TerminalLex.kt (pewarnaan murni, teruji), test TerminalLexTest.kt.
+- Diubah: ActivityZone.kt (memakai LiveStatusLine), AgentLoop.kt (`stepTitleFor`), LiveTail.kt (interval).
+- Belum dikompilasi di lingkungan penyusunan: jalankan WITH_TESTS=1 bash build-termux.sh.
+
+
+## Tampilan messenger biru (v2.6)
+Tujuan: chat sama seperti screenshot acuan, seluruh aplikasi diselaraskan. Logika agen/penyedia/failover tidak diubah.
+
+- Latar: gradasi biru tua ke biru langit (warna diambil dari latar myBCA) di `ChatBackground`; `chat_bg.png` (tak terpakai, 2,6 MB) dihapus.
+- Bilah atas pucat: panah kembali, tiga bola oranye + "Menunggu perintah Anda..." / "Sedang bekerja...", telepon (suara), caret (pilih model), menu tiga titik (Chat baru, Model AI, Pengaturan).
+- Gelembung pengguna: navy gelap berekor di kanan atas, teks putih, jam + centang ganda biru. Gelembung AI: putih berekor di kiri atas, jam abu. (`BubbleDrawable` di ChatLook.kt)
+- Riwayat lama yang dipulihkan tampil tanpa jam (waktu aslinya memang tidak tersimpan).
+- Status AI: tiga bola oranye mengilap yang memantul bergantian (`drawBalls`, dipakai DotsView/OrbitDotsView) + teks gelap; ikon hasil di lingkaran putih.
+- Daftar langkah dalam gelembung putih (`StepChecklist.kt`) dari langkah nyata: centang hijau (selesai), roda gigi biru berputar (berjalan), lingkaran hijau (menunggu izin), silang merah (gagal).
+- Kotak kode: judul gelap (ikon file, nama file/bahasa, label bahasa di kanan; ketuk = salin), nomor baris, kode berwarna. Bila fence berisi nama file (```kotlin Nama.kt) tampil kartu file (ukuran, tombol unduh ke folder Download, Android 10+).
+- Kolom input putih bulat: wajah (contoh perintah), "Pesan...", penjepit (unggah file/gambar), garis, mikrofon/kirim/berhenti.
+- Layar kosong, catatan, tombol Pasang APK, dan "Catatan perintah" disesuaikan dengan latar biru. Warna merek jadi biru #0A74D0.
+- Belum dikompilasi di lingkungan penyusunan: jalankan WITH_TESTS=1 bash build-termux.sh.
+
+### Baris status live sesuai video acuan (v2.6b)
+- Baris status kembali ke gaya video: strip putih gading (#F9F9F6) selebar chat, tiga titik terakota kecil yang mengorbit (`OrbitDotsView`), teks abu terang dengan pita gelap menyapu ke kanan (2 detik per putaran, `ShimmerText.shimmerMs`), dipotong "..." sebelum panah di kanan.
+- Pergantian teks: pudar-silang singkat dengan geser naik tipis; ketuk baris membuka terminal live (tidak berubah).
+- Tiga bola oranye mengilap tetap dipakai di bilah atas.
+
+### Perbaikan dari rekaman layar (v2.6c)
+- Gelembung AI kosong yang tertinggal di atas baris status dihapus (gelembung baru disembunyikan sampai ada isi; hilang bila balasan kosong).
+- Jam di gelembung pengguna tidak lagi terpotong ("17.26" utuh).
+- Bola oranye di bilah atas: cahaya tidak lagi terpotong kotak, bola terpisah rapi; judul bilah atas dipersempit agar "Menunggu perintah Anda..." muat.
+- Teks percobaan ulang dipersingkat: "Server sibuk (429) · ulang 12 dtk (1/3)" agar hitungan mundur tidak terpotong.
+
+### Bola oranye bilah atas (v2.6d)
+- Bola lebih kecil (jari-jari ~4 dp) dan bergerak pelan ke segala arah dengan gerak Lissajous yang mulus (satu putaran 7 detik, tanpa lompatan); cahaya tetap di dalam kotak.
+
+## Pembersihan kode (v2.6e)
+Tujuan: membuang sisa kode hasil pengeditan yang tidak lagi dipakai aplikasi. Perilaku aplikasi tidak berubah.
+
+- Dihapus dari aplikasi: `CardQueue`, `slotFor`, `CARD_ANIM_MS`, `MAX_VISIBLE_ROWS` (ActivityModel), `appendOutput` (AgentStepModels),
+  `nextFallbackModel`, `buildFallbackPlan`, `FallbackStep` (ApiErrors), `FailoverTracker`, `FoRow`, `FoRowSnap`, `FoSnapshot`, `foNote`
+  (Failover; peralihan AI kini memakai `buildChain`), `classifyError` (pakai `parseToolResult(...).errorKind`),
+  `decorateAgentBubble` dan `refreshAgentBubbleHeader` (fungsi kosong), warna `CODE_BG`, `CHIP`, `STEP_IDLE`, properti `colors` dan
+  parameter `dotColor` pada `DotsView`, parameter `content` pada `addCopyRow`, satu import tak terpakai di Markdown.kt.
+- Tes yang hanya menguji kode di atas ikut dihapus (ActivityModelTest, ActivityFeedTest, ApiErrorsTest, FailoverTest); tes lain disesuaikan.
+- Sengaja dipertahankan: `ApkProvider` (terdaftar di AndroidManifest) dan `putEncryptedValue` (diuji SecretStorageTest).
+- Belum dikompilasi di lingkungan penyusunan: jalankan WITH_TESTS=1 bash build-termux.sh.
+
+## Mode "Susun kode dulu, izin saat build" (v2.7)
+Alur: pengguna melampirkan file, AI membacanya langsung (tanpa izin), memahami perintah, menyusun semua kode, baru minta izin saat build.
+
+- Baru: pengaturan `draft` (bawaan AKTIF) di Pengaturan lanjutan, baris "Susun kode dulu, izin saat build".
+- `write_file` di dalam folder kerja jalan tanpa dialog; cadangan, tombol urungkan, dan catatan perintah tetap ada (mode log: "Otomatis (susun kode)").
+- Tetap minta persetujuan: tulis ke area sensitif, folder sistem Termux, atau di luar folder kerja; semua `run_command` yang bukan baca-saja (termasuk build).
+- Mode hanya baca dan mode sandbox tetap menang atas mode ini. Prompt sistem ikut memberi tahu AI urutan kerjanya.
+- Membaca lampiran tidak butuh perubahan: perintah baca sudah otomatis lewat "Setujui otomatis perintah baca".
+- Belum dikompilasi di lingkungan penyusunan: jalankan WITH_TESTS=1 bash build-termux.sh.

@@ -1,0 +1,205 @@
+package com.kita.agent
+
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.view.Gravity
+import android.view.View
+import android.widget.LinearLayout
+import android.widget.TextView
+
+// Menambah gelembung pesan, catatan, kartu pasang-APK dan kartu undo ke layar chat.
+// Fungsi-fungsi di sini adalah ekstensi MainActivity (dipecah dari MainActivity.kt).
+
+internal fun MainActivity.insertBeforeStatus(v: View, lp: LinearLayout.LayoutParams) {
+    val idx = if (statusRoot.parent === chatBox) chatBox.indexOfChild(statusRoot) else -1
+    val zoneIdx = if (zone.parent === chatBox) chatBox.indexOfChild(zone) else -1
+    val insertAt = listOf(idx, zoneIdx).filter { it >= 0 }.minOrNull()
+    if (insertAt != null) chatBox.addView(v, insertAt, lp) else chatBox.addView(v, lp)
+}
+
+private fun MainActivity.updateStreamingText(box: LinearLayout, text: String) {
+    val tv = box.findViewWithTag<ShimmerText>("ai_stream_text") ?: ShimmerText(this).apply {
+        tag = "ai_stream_text"
+        textSize = 15.5f
+        setTextColor(Palette.INK)
+        setLineSpacing(0f, 1.3f)
+        setShimmer(false)
+        box.addView(this, LinearLayout.LayoutParams(WRAP, WRAP))
+    }
+    box.visibility = View.VISIBLE
+    // Lebar WRAP + requestLayout: TextView berlebar MATCH_PARENT di dalam gelembung WRAP tidak meminta
+    // induknya mengukur ulang saat teks bertambah, sehingga gelembung macet di lebar huruf pertama.
+    tv.text = mdToSpannable(text)
+    tv.requestLayout()
+}
+
+internal fun nowStamp(): String =
+    java.text.SimpleDateFormat("HH.mm", java.util.Locale.getDefault()).format(java.util.Date())
+
+/** Baris jam di pojok kanan bawah gelembung; pesan pengguna ditambah centang ganda biru. */
+internal fun MainActivity.stampRow(time: String, mine: Boolean): View = LinearLayout(this).apply {
+    orientation = LinearLayout.HORIZONTAL
+    gravity = Gravity.CENTER_VERTICAL or Gravity.END
+    addView(TextView(context).apply {
+        text = time
+        textSize = 11f
+        setTextColor(if (mine) Palette.TIME_ME else Palette.TIME_AI)
+    })
+    if (mine) addView(
+        IconView(context, IconView.DOUBLE_CHECK, Palette.TICK),
+        LinearLayout.LayoutParams(dp(16), dp(14)).apply { marginStart = dp(3) }
+    )
+}
+
+internal fun MainActivity.addMsg(kind: Int, text: String) = runOnUiThread {
+    emptyState.visibility = View.GONE
+    if (kind == USER) {
+        val stamp = if (restoring) "" else nowStamp()
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            tag = MsgMeta(USER, text, stamp)
+            background = BubbleDrawable(Palette.BUBBLE_ME, dp(16).toFloat(), dp(8).toFloat(), true)
+            setPadding(dp(14), dp(10), dp(14) + dp(8), dp(7))
+        }
+        box.setOnLongClickListener { showMsgMenu(box); true }
+        box.addView(TextView(this).apply {
+            this.text = text
+            textSize = 16f
+            setTextColor(Color.WHITE)
+            setLineSpacing(0f, 1.2f)
+            setOnLongClickListener { showMsgMenu(box); true }
+        }, LinearLayout.LayoutParams(WRAP, WRAP))
+        if (stamp.isNotEmpty()) box.addView(stampRow(stamp, true), LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = dp(2); gravity = Gravity.END })
+        val lp = LinearLayout.LayoutParams(WRAP, WRAP).apply {
+            topMargin = dp(14)
+            gravity = Gravity.END
+            marginStart = dp(48)
+        }
+        insertBeforeStatus(box, lp)
+    } else {
+        val box = newAiBox()
+        fillMarkdown(box, text)
+    }
+    scrollDown()
+}
+
+internal fun MainActivity.newAiBox(): LinearLayout {
+    // Balasan teks menutup kartu aktivitas yang sedang berjalan; langkah berikutnya membuka kartu baru.
+    zone.feed.seal()
+    val box = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        tag = MsgMeta(AI, "", if (restoring) "" else nowStamp())
+        background = BubbleDrawable(Palette.BUBBLE_AI, dp(16).toFloat(), dp(8).toFloat(), false)
+        setPadding(dp(14) + dp(8), dp(10), dp(14), dp(7))
+        visibility = View.GONE // tampil setelah ada isi; gelembung kosong tidak boleh tertinggal
+    }
+    box.setOnLongClickListener { showMsgMenu(box); true }
+    insertBeforeStatus(box, LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = dp(12); marginStart = dp(26); marginEnd = dp(12) })
+    return box
+}
+
+/** Dipanggil saat teks balasan mengalir masuk; menggambar ulang pesan yang sedang ditulis. */
+internal fun MainActivity.streamUpdate(text: String) = runOnUiThread {
+    emptyState.visibility = View.GONE
+    val box = streamBox ?: newAiBox().also { streamBox = it }
+    streamText = text
+    streamEnded = false
+    streamCopyAdded = false
+    typewriterTarget = text
+    if (!typewriterTarget.startsWith(typewriterShown)) typewriterShown = ""
+    typewriterHandler.removeCallbacksAndMessages(null)
+    val tick = object : Runnable {
+        override fun run() {
+            val target = typewriterTarget
+            if (typewriterShown.length < target.length) {
+                val step = if (target.length - typewriterShown.length > 240) 2 else 1
+                typewriterShown = target.take((typewriterShown.length + step).coerceAtMost(target.length))
+                updateStreamingText(box, typewriterShown)
+                if (typewriterShown.length % 3 == 0 || typewriterShown.length == target.length) scrollDown()
+                typewriterHandler.postDelayed(this, 26L)
+            } else if (streamEnded && !streamCopyAdded) {
+                streamCopyAdded = true
+                fillMarkdown(box, typewriterShown, withCopy = false, streaming = false)
+                addCopyRow(box)
+            }
+        }
+    }
+    typewriterHandler.post(tick)
+}
+
+internal fun MainActivity.streamEnd() = runOnUiThread {
+    streamEnded = true
+    val b = streamBox
+    if (b == null || streamText.isBlank()) {
+        if (b != null && b.childCount == 0) (b.parent as? android.view.ViewGroup)?.removeView(b)
+        streamBox = null
+        streamText = ""
+        return@runOnUiThread
+    }
+    typewriterHandler.post(object : Runnable {
+        override fun run() {
+            if (typewriterShown.length < typewriterTarget.length) {
+                typewriterHandler.postDelayed(this, 26L)
+            } else if (!streamCopyAdded) {
+                streamCopyAdded = true
+                fillMarkdown(b, typewriterShown, withCopy = false, streaming = false)
+                addCopyRow(b)
+                streamBox = null
+                streamText = ""
+            }
+        }
+    })
+}
+
+internal fun MainActivity.addNote(t: String) = runOnUiThread {
+    val tv = TextView(this).apply {
+        text = t
+        textSize = 13f
+        setTextColor(Palette.ON_BLUE_SOFT)
+        setPadding(dp(4), dp(8), 0, dp(2))
+    }
+    insertBeforeStatus(tv, LinearLayout.LayoutParams(WRAP, WRAP))
+    scrollDown()
+}
+
+internal fun MainActivity.addInstallCard(path: String) = runOnUiThread {
+    val btn = TextView(this).apply {
+        text = "Pasang APK"
+        textSize = 15f
+        setTextColor(Palette.BRAND_DEEP)
+        gravity = Gravity.CENTER
+        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        background = pressable(rounded(Color.WHITE, 24))
+        setPadding(dp(24), dp(12), dp(24), dp(12))
+    }
+    btn.setOnClickListener { installApk(path, btn) }
+    insertBeforeStatus(btn, LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = dp(14) })
+    scrollDown()
+}
+
+internal fun MainActivity.addUndoCard(path: String, bak: String) = runOnUiThread {
+    val label = "Urungkan: " + path.substringAfterLast('/')
+    val btn = TextView(this).apply {
+        text = label
+        textSize = 14f
+        setTextColor(darkOf(Palette.AMBER))
+        gravity = Gravity.CENTER
+        background = GradientDrawable().apply {
+            setColor(tint(Palette.AMBER, 0.86f))
+            cornerRadius = dp(20).toFloat()
+        }
+        setPadding(dp(16), dp(8), dp(16), dp(8))
+    }
+    btn.setOnClickListener { undoWrite(path, bak, btn, label) }
+    insertBeforeStatus(btn, LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = dp(12) })
+    scrollDown()
+}
+
+/** Versi lebih gelap dari [c] untuk teks di atas latar pastel. */
+internal fun darkOf(c: Int): Int {
+    val r = ((c shr 16) and 0xFF) * 6 / 10
+    val g = ((c shr 8) and 0xFF) * 6 / 10
+    val b = (c and 0xFF) * 6 / 10
+    return (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+}
